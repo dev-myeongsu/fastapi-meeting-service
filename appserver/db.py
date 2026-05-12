@@ -1,3 +1,6 @@
+from typing import Annotated
+
+from fastapi import Depends
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -26,6 +29,8 @@ async def use_session():
     async with async_session_factory() as session:
         yield session
 
+
+DbSessionDep = Annotated[AsyncSession, Depends(use_session)]
 
 DSN = "sqlite+aiosqlite:///./local.db"
 

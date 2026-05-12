@@ -1,0 +1,68 @@
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import SQLModel
+
+from appserver.app import include_routers
+from appserver.apps.account import models as account_models
+from appserver.apps.calendar import models as calendar_models
+from appserver.db import create_async_engine, create_session, use_session
+
+
+@pytest.fixture()
+async def db_session():
+
+    dsn = "sqlite+aiosqlite:///:memory:"
+    engine = create_async_engine(dsn)
+
+    async with engine.connect() as conn:
+        await conn.run_sync(SQLModel.metadata.drop_all)
+        await conn.run_sync(SQLModel.metadata.create_all)
+
+        session_factory = create_session(conn)
+
+        async with session_factory() as session:
+            yield session
+
+        await conn.run_sync(SQLModel.metadata.drop_all)
+        await conn.rollback()
+
+    await engine.dispose()
+
+
+@pytest.fixture()
+def fastapi_app(db_session: AsyncSession):
+
+    app = FastAPI()
+    include_routers(app)
+
+    async def override_use_session():
+        yield db_session
+
+    app.dependency_overrides[use_session] = override_use_session
+
+    return app
+
+
+@pytest.fixture()
+def client(fastapi_app: FastAPI):
+
+    with TestClient(fastapi_app) as client:
+        yield client
+
+
+@pytest.fixture()
+async def host_user(db_session: AsyncSession):
+    user = account_models.User(
+        username="test",
+        hashed_password="test",
+        email="test@example.com",
+        display_name="test",
+        is_host=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.flush()
+
+    return user
